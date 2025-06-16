@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Random Voice Chat</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f4f4f4;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+      }
+      button {
+        padding: 15px 25px;
+        font-size: 16px;
+        margin-top: 20px;
+        cursor: pointer;
+      }
+      .status {
+        margin-top: 20px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Clone</h1>
+    <button id="startBtn">Start Chat</button>
+    <div class="status" id="status">Idle...</div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <script>
+      const socket = io("http://localhost:3000"); 
+
+      let localStream;
+      let peerConnection;
+      const config = {
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      };
+
+      const startBtn = document.getElementById("startBtn");
+      const statusDiv = document.getElementById("status");
+
+      function updateStatus(msg) {
+        statusDiv.innerText = msg;
+      }
+
+      async function initCall() {
+        updateStatus("Requesting microphone access...");
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          updateStatus("Looking for a partner...");
+          socket.emit("find-partner");
+        } catch (err) {
+          updateStatus("Microphone access denied 😥");
+          console.error("Error accessing mic:", err);
+        }
+      }
+
+      startBtn.onclick = initCall;
+
+      socket.on("partner-found", async ({ socketId }) => {
+        updateStatus("Partner found! Connecting...");
+
+        peerConnection = new RTCPeerConnection(config);
+
+        localStream.getTracks().forEach((track) => {
+          peerConnection.addTrack(track, localStream);
+        });
+
+        peerConnection.ontrack = (event) => {
+          const remoteAudio = new Audio();
+          remoteAudio.srcObject = event.streams[0];
+          remoteAudio.play();
+        };
+
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit("signal", {
+              to: socketId,
+              signal: { candidate: event.candidate },
+            });
+          }
+        };
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        socket.emit("signal", {
+          to: socketId,
+          signal: { sdp: peerConnection.localDescription },
+        });
+      });
+
+      socket.on("signal", async ({ from, signal }) => {
+        if (!peerConnection) {
+          peerConnection = new RTCPeerConnection(config);
+
+          peerConnection.ontrack = (event) => {
+            const remoteAudio = new Audio();
+            remoteAudio.srcObject = event.streams[0];
+            remoteAudio.play();
+          };
+
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              socket.emit("signal", {
+                to: from,
+                signal: { candidate: event.candidate },
+              });
+            }
+          };
+
+          localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+          });
+        }
+
+        if (signal.sdp) {
+          await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(signal.sdp)
+          );
+
+          if (signal.sdp.type === "offer") {
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            socket.emit("signal", {
+              to: from,
+              signal: { sdp: peerConnection.localDescription },
+            });
+          }
+        }
+
+        if (signal.candidate) {
+          try {
+            await peerConnection.addIceCandidate(
+              new RTCIceCandidate(signal.candidate)
+            );
+          } catch (err) {
+            console.error("Error adding ICE candidate", err);
+          }
+        }
+      });
+
+      socket.on("no-partner-available", () => {
+        updateStatus("No partner available right now. Please try again later.");
+      });
+
+      socket.on("partner-disconnected", () => {
+        updateStatus("Partner disconnected.");
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+      });
+    </script>
+  </body>
+</html>
