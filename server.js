@@ -46,7 +46,7 @@ io.on('connection', (socket) => {
   socket.on('find-partner', () => {
     const user = users.get(socket.id);
     if (!user) return;
-
+    
     for (let [otherSocketId, otherUser] of users) {
       const isEligible = (
         otherSocketId !== socket.id &&
