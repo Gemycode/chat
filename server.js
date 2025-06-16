@@ -42,6 +42,8 @@ io.on('connection', (socket) => {
     reported: false,
     lastPartner: null,
   });
+  io.emit("online-users", users.size);
+
 
   socket.on('find-partner', () => {
     const user = users.get(socket.id);
@@ -103,6 +105,8 @@ io.on('connection', (socket) => {
     }
 
     users.delete(socket.id);
+    io.emit("online-users", users.size);
+
     console.log(` User disconnected: ${socket.id}`);
   });
 });

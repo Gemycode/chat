@@ -29,6 +29,8 @@
   <body>
     <h1>Clone</h1>
     <button id="startBtn">Start Chat</button>
+    <div class="status" id="onlineCount">Online: 0</div>
+
     <div class="status" id="status">Idle...</div>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -51,6 +53,11 @@
       function updateStatus(msg) {
         statusDiv.innerText = msg;
       }
+      const onlineCountDiv = document.getElementById("onlineCount");
+
+      socket.on("online-users", (count) => {
+        onlineCountDiv.innerText = `Online: ${count}`;
+      });
 
       async function initCall() {
         updateStatus("Requesting microphone access...");
